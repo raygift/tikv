@@ -517,10 +517,21 @@ impl RowSampleCollector {
         let cur_rng = self.rng.gen_range(0, i64::MAX);
         if self.samples.len() < self.max_sample_size {
             need_push = true;
-        } else if self.samples.peek().unwrap().0.0 < cur_rng {
-            need_push = true;
-            let (_, evicted) = self.samples.pop().unwrap().0;
-            self.memory_usage -= evicted.iter().map(|x| x.capacity()).sum::<usize>();
+        // } else if self.samples.peek().unwrap().0.0 < cur_rng {
+        //     need_push = true;
+        //     let (_, evicted) = self.samples.pop().unwrap().0;
+        //     self.memory_usage -= evicted.iter().map(|x| x.capacity()).sum::<usize>();
+        // }
+        match self.samples.peek() {
+            Some(data) => {
+                if data.0.0 < cur_rng {
+                    need_push = true;
+                    let (_, evicted) = self.samples.pop().unwrap().0;
+                    self.base.memory_usage -=
+                        evicted.iter().map(|x| x.capacity()).sum::<usize>();
+                }
+            }
+            None => return,
         }
 
         if need_push {
@@ -1053,13 +1064,4 @@ mod tests {
         }
 
         let exp_freq = sample_num as f64 * loop_cnt as f64 / row_num as f64;
-        let delta = 0.5;
-        for (_, v) in item_cnt.into_iter() {
-            assert!(
-                v as f64 >= exp_freq / (1.0 + delta) && v as f64 <= exp_freq * (1.0 + delta),
-                "v: {}",
-                v
-            );
-        }
-    }
-}
+        let delta = 0

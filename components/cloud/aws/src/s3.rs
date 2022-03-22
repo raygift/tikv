@@ -637,7 +637,7 @@ mod tests {
         use tikv_util::time::Limiter;
 
         let bucket = BucketConf {
-            endpoint: "http://127.0.0.1:9000".to_owned(),
+            endpoint: "http://192.168.92.3:9000".to_owned(),
             bucket: "bucket".to_owned(),
             prefix: "prefix".to_owned(),
             ..BucketConf::default()

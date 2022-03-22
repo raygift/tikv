@@ -364,7 +364,7 @@ where
     }
 
     // Return listening address, this may only be used for outer test
-    // to get the real address because we may use "127.0.0.1:0"
+    // to get the real address because we may use "192.168.92.3:0"
     // in test to avoid port conflict.
     pub fn listening_addr(&self) -> SocketAddr {
         self.addr.unwrap()
@@ -996,7 +996,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
         let client = Client::new();
         let uri = Uri::builder()
@@ -1043,7 +1043,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
         let client = Client::new();
         let uri = Uri::builder()
@@ -1087,7 +1087,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
         let client = Client::new();
         let addr = status_server.listening_addr().to_string();
@@ -1202,7 +1202,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
         let client = Client::new();
         let addr = status_server.listening_addr().to_string();
@@ -1245,7 +1245,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
         let client = Client::new();
         let addr = status_server.listening_addr().to_string();
@@ -1280,7 +1280,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
 
         let mut connector = HttpConnector::new();
@@ -1352,7 +1352,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
         let client = Client::new();
         let uri = Uri::builder()
@@ -1381,7 +1381,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
         let client = Client::new();
         let uri = Uri::builder()
@@ -1408,7 +1408,7 @@ mod tests {
             MockRouter,
         )
         .unwrap();
-        let addr = "127.0.0.1:0".to_owned();
+        let addr = "192.168.92.3:0".to_owned();
         let _ = status_server.start(addr.clone(), addr);
 
         let uri = Uri::builder()

@@ -16,7 +16,7 @@ normal-concurrency = 1
 low-concurrency = 1
 
 [server]
-addr = "127.0.0.1:0"
+addr = "192.168.92.3:0"
 grpc-concurrency = 1
 # Considering connection selection algo is involved, maybe
 # use 2 or larger value here?

@@ -25,7 +25,7 @@ pub struct Server<C: PdMocker> {
 impl Server<Service> {
     pub fn new(eps_count: usize) -> Server<Service> {
         let mgr = SecurityManager::new(&SecurityConfig::default()).unwrap();
-        let eps = vec![("127.0.0.1".to_owned(), 0); eps_count];
+        let eps = vec![("192.168.92.3".to_owned(), 0); eps_count];
         let case = Option::None::<Arc<Service>>;
         Self::with_configuration(&mgr, eps, case)
     }
@@ -38,7 +38,7 @@ impl Server<Service> {
 impl<C: PdMocker + Send + Sync + 'static> Server<C> {
     pub fn with_case(eps_count: usize, case: Arc<C>) -> Server<C> {
         let mgr = SecurityManager::new(&SecurityConfig::default()).unwrap();
-        let eps = vec![("127.0.0.1".to_owned(), 0); eps_count];
+        let eps = vec![("192.168.92.3".to_owned(), 0); eps_count];
         Server::with_configuration(&mgr, eps, Some(case))
     }
 

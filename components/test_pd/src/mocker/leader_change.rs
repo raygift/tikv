@@ -52,7 +52,7 @@ impl Default for LeaderChange {
 
 const DEAD_ID: u64 = 1000;
 const DEAD_NAME: &str = "walking_dead";
-const DEAD_URL: &str = "127.0.0.1:65534";
+const DEAD_URL: &str = "192.168.92.3:65534";
 
 impl PdMocker for LeaderChange {
     fn get_members(&self, _: &GetMembersRequest) -> Option<Result<GetMembersResponse>> {

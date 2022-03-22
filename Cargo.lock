@@ -623,7 +623,7 @@ dependencies = [
  "pd_client",
  "prometheus",
  "prometheus-static-metric",
- "prost",
+ "prost 0.7.0",
  "protobuf",
  "raft",
  "raftstore",
@@ -1922,8 +1922,6 @@ dependencies = [
 [[package]]
 name = "grpcio"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24d99e00eed7e0a04ee2705112e7cfdbe1a3cc771147f22f016a8cd2d002187b"
 dependencies = [
  "bytes 1.0.1",
  "futures 0.3.15",
@@ -1931,7 +1929,7 @@ dependencies = [
  "libc 0.2.100",
  "log",
  "parking_lot",
- "prost",
+ "prost 0.8.0",
  "protobuf",
 ]
 
@@ -1942,7 +1940,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4caa0700833147dcfbe4f0758bd92545cc0f4506ee7fa154e499745a8b24e86c"
 dependencies = [
  "derive-new",
- "prost",
+ "prost 0.7.0",
  "prost-build",
  "prost-types",
  "protobuf",
@@ -1952,21 +1950,17 @@ dependencies = [
 [[package]]
 name = "grpcio-health"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43439654c23bb8d2150f5a4853d8dc9390f76a3cac49c892e4f32265998dbaad"
 dependencies = [
  "futures 0.3.15",
  "grpcio",
  "log",
- "prost",
+ "prost 0.8.0",
  "protobuf",
 ]
 
 [[package]]
 name = "grpcio-sys"
 version = "0.9.1+1.38.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9447d1a926beeef466606cc45717f80897998b548e7dc622873d453e1ecb4be4"
 dependencies = [
  "bindgen",
  "boringssl-src",
@@ -2341,8 +2335,8 @@ dependencies = [
  "futures 0.3.15",
  "grpcio",
  "lazy_static",
- "prost",
- "prost-derive",
+ "prost 0.7.0",
+ "prost-derive 0.7.0",
  "protobuf",
  "protobuf-build",
  "raft-proto",
@@ -3356,9 +3350,9 @@ dependencies = [
  "log",
  "nix 0.19.0",
  "parking_lot",
- "prost",
+ "prost 0.7.0",
  "prost-build",
- "prost-derive",
+ "prost-derive 0.7.0",
  "symbolic-demangle",
  "tempfile",
  "thiserror",
@@ -3497,7 +3491,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e6984d2f1a23009bd270b8bb56d0926810a3d483f59c987d77969e9d8e840b2"
 dependencies = [
  "bytes 1.0.1",
- "prost-derive",
+ "prost-derive 0.7.0",
+]
+
+[[package]]
+name = "prost"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de5e2533f59d08fcf364fd374ebda0692a70bd6d7e66ef97f306f45c6c5d8020"
+dependencies = [
+ "bytes 1.0.1",
+ "prost-derive 0.8.0",
 ]
 
 [[package]]
@@ -3512,7 +3516,7 @@ dependencies = [
  "log",
  "multimap",
  "petgraph",
- "prost",
+ "prost 0.7.0",
  "prost-types",
  "tempfile",
  "which",
@@ -3532,13 +3536,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "600d2f334aa05acb02a755e217ef1ab6dea4d51b58b7846588b747edec04efba"
+dependencies = [
+ "anyhow",
+ "itertools 0.10.0",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b518d7cdd93dab1d1122cf07fa9a60771836c668dde9d9e2a139f957f0d9f1bb"
 dependencies = [
  "bytes 1.0.1",
- "prost",
+ "prost 0.7.0",
 ]
 
 [[package]]
@@ -3640,7 +3657,7 @@ source = "git+https://github.com/tikv/raft-rs?branch=master#e6d28ef0f509c072e132
 dependencies = [
  "bytes 1.0.1",
  "lazy_static",
- "prost",
+ "prost 0.7.0",
  "protobuf",
  "protobuf-build",
 ]
@@ -3705,7 +3722,7 @@ dependencies = [
  "pd_client",
  "prometheus",
  "prometheus-static-metric",
- "prost",
+ "prost 0.7.0",
  "protobuf",
  "raft",
  "raft-proto",
@@ -4026,7 +4043,7 @@ dependencies = [
  "panic_hook",
  "pd_client",
  "prometheus",
- "prost",
+ "prost 0.7.0",
  "protobuf",
  "raft",
  "raftstore",
@@ -5456,7 +5473,7 @@ dependencies = [
  "procinfo",
  "prometheus",
  "prometheus-static-metric",
- "prost",
+ "prost 0.7.0",
  "protobuf",
  "raft",
  "raft_log_engine",
@@ -5735,8 +5752,8 @@ version = "0.0.1"
 source = "git+https://github.com/pingcap/tipb.git#dc47a87b52aaa5ff150d179f47ba6c25dc441227"
 dependencies = [
  "lazy_static",
- "prost",
- "prost-derive",
+ "prost 0.7.0",
+ "prost-derive 0.7.0",
  "protobuf",
  "protobuf-build",
 ]

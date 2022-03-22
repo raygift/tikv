@@ -96,13 +96,13 @@ $ tar -xzf pd-$TIKV_VERSION-$GOOS-$GOARCH.tar.gz
 2. Start PD instance.
 
 ```bash
-$ ./pd-server --name=pd --data-dir=/tmp/pd/data --client-urls="http://127.0.0.1:2379" --peer-urls="http://127.0.0.1:2380" --initial-cluster="pd=http://127.0.0.1:2380" --log-file=/tmp/pd/log/pd.log
+$ ./pd-server --name=pd --data-dir=/tmp/pd/data --client-urls="http://192.168.92.2:2379" --peer-urls="http://192.168.92.3:2380" --initial-cluster="pd=http://192.168.92.3:2380" --log-file=/tmp/pd/log/pd.log
 ```
 
 3. Start TiKV instance.
 
 ```bash
-$ ./tikv-server --pd-endpoints="127.0.0.1:2379" --addr="127.0.0.1:20160" --data-dir=/tmp/tikv/data --log-file=/tmp/tikv/log/tikv.log
+$ ./tikv-server --pd-endpoints="192.168.92.2:2379" --addr="192.168.92.3:20160" --data-dir=/tmp/tikv/data --log-file=/tmp/tikv/log/tikv.log
 ```
 
 4. Install TiKV Client(Python) and verify the deployment, required Python 3.5+.
@@ -114,7 +114,7 @@ $ pip3 install -i https://test.pypi.org/simple/ tikv-client
 ```python
 from tikv_client import RawClient
 
-client = RawClient.connect("127.0.0.1:2379")
+client = RawClient.connect("192.168.92.2:2379")
 
 client.put(b'foo', b'bar')
 print(client.get(b'foo')) # b'bar'

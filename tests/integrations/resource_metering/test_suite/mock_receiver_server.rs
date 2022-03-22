@@ -32,7 +32,7 @@ impl MockReceiverServer {
 
         let server = ServerBuilder::new(env)
             .channel_args(channel_args)
-            .bind("127.0.0.1", port)
+            .bind("192.168.92.3", port)
             .register_service(create_resource_usage_agent(self));
 
         server

@@ -246,6 +246,8 @@ raft = { git = "https://github.com/tikv/raft-rs", branch = "master" }
 raft-proto = { git = "https://github.com/tikv/raft-rs", branch = "master" }
 protobuf = { git = "https://github.com/pingcap/rust-protobuf", branch = "v2.8" }
 protobuf-codegen = { git = "https://github.com/pingcap/rust-protobuf", branch = "v2.8" }
+grpcio = { path="/home/myvm2/Desktop/rust/grpc-rs", version = "0.9",  default-features = false, features = ["openssl-vendored"] }
+grpcio-health = { path="/home/myvm2/Desktop/rust/grpc-rs/health", version = "0.9", default-features = false }
 
 # TODO: remove this replacement after rusoto_s3 truly supports virtual-host style (https://github.com/rusoto/rusoto/pull/1823).
 rusoto_core = { git = "https://github.com/tikv/rusoto", branch = "gh1482-s3-addr-styles" }

@@ -144,7 +144,7 @@ mod tests {
         assert!(cfg.validate().is_ok()); // Empty address is allowed.
         let cfg = Config {
             enabled: false,
-            receiver_address: "127.0.0.1:6666".to_string(),
+            receiver_address: "192.168.92.3:6666".to_string(),
             report_receiver_interval: ReadableDuration::minutes(1),
             max_resource_groups: 2000,
             precision: ReadableDuration::secs(1),
@@ -152,7 +152,7 @@ mod tests {
         assert!(cfg.validate().is_ok());
         let cfg = Config {
             enabled: false,
-            receiver_address: "127.0.0.1:6666".to_string(),
+            receiver_address: "192.168.92.3:6666".to_string(),
             report_receiver_interval: ReadableDuration::days(999), // invalid
             max_resource_groups: 2000,
             precision: ReadableDuration::secs(1),
@@ -160,7 +160,7 @@ mod tests {
         assert!(cfg.validate().is_err());
         let cfg = Config {
             enabled: false,
-            receiver_address: "127.0.0.1:6666".to_string(),
+            receiver_address: "192.168.92.3:6666".to_string(),
             report_receiver_interval: ReadableDuration::minutes(1),
             max_resource_groups: usize::MAX, // invalid
             precision: ReadableDuration::secs(1),
@@ -168,7 +168,7 @@ mod tests {
         assert!(cfg.validate().is_err());
         let cfg = Config {
             enabled: false,
-            receiver_address: "127.0.0.1:6666".to_string(),
+            receiver_address: "192.168.92.3:6666".to_string(),
             report_receiver_interval: ReadableDuration::minutes(1),
             max_resource_groups: 2000,
             precision: ReadableDuration::days(999), // invalid

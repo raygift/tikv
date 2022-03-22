@@ -309,7 +309,7 @@ impl<T: RaftStoreRouter<E::Local> + Unpin, S: StoreAddrResolver + 'static, E: En
     }
 
     // Return listening address, this may only be used for outer test
-    // to get the real address because we may use "127.0.0.1:0"
+    // to get the real address because we may use "192.168.92.3:0"
     // in test to avoid port conflict.
     pub fn listening_addr(&self) -> SocketAddr {
         self.local_addr
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn test_peer_resolve() {
         let cfg = Config {
-            addr: "127.0.0.1:0".to_owned(),
+            addr: "192.168.92.3:0".to_owned(),
             ..Default::default()
         };
 

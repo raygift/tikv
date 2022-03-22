@@ -225,13 +225,13 @@ impl Simulator for ServerCluster {
 
         let bg_worker = WorkerBuilder::new("background").thread_count(2).create();
 
-        if cfg.server.addr == "127.0.0.1:0" {
+        if cfg.server.addr == "192.168.92.3:0" {
             // Now we cache the store address, so here we should re-use last
             // listening address for the same store.
             if let Some(addr) = self.addrs.get(node_id) {
                 cfg.server.addr = addr;
             } else {
-                cfg.server.addr = format!("127.0.0.1:{}", test_util::alloc_port());
+                cfg.server.addr = format!("192.168.92.3:{}", test_util::alloc_port());
             }
         }
 

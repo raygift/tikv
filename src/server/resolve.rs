@@ -248,7 +248,7 @@ mod tests {
         }
     }
 
-    const STORE_ADDR: &str = "127.0.0.1:12345";
+    const STORE_ADDR: &str = "192.168.92.3:12345";
 
     #[test]
     fn test_resolve_store_state_up() {
@@ -273,12 +273,12 @@ mod tests {
 
     #[test]
     fn test_resolve_store_peer_addr() {
-        let mut store = new_store("127.0.0.1:12345", metapb::StoreState::Up);
-        store.set_peer_address("127.0.0.1:22345".to_string());
+        let mut store = new_store("192.168.92.3:12345", metapb::StoreState::Up);
+        store.set_peer_address("192.168.92.3:22345".to_string());
         let runner = new_runner(store);
         assert_eq!(
             runner.get_address(0).unwrap(),
-            "127.0.0.1:22345".to_string()
+            "192.168.92.3:22345".to_string()
         );
     }
 

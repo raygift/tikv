@@ -127,7 +127,7 @@
 
 [server]
 ## Listening address.
-# addr = "127.0.0.1:20160"
+# addr = "192.168.92.3:20160"
 
 ## Advertise listening address for client communication.
 ## If not set, `addr` will be used.
@@ -138,7 +138,7 @@
 ## the HTTP address. Notice that there is a risk of leaking status
 ## information if this port is exposed to the public.
 ## Empty string means disabling it.
-# status-addr = "127.0.0.1:20180"
+# status-addr = "192.168.92.3:20180"
 
 ## Set the maximum number of worker threads for the status report HTTP service.
 # status-thread-pool-size = 1
@@ -231,7 +231,7 @@
 ## `max(reserve-space, capacity * 5%)` will be reserved exactly.
 ##
 ## Set it to 0 will cause no space is reserved at all. It's generally used for tests.
-# reserve-space = "5GB"
+# reserve-space = "1GiB"
 
 [storage.block-cache]
 ## Whether to create a shared block cache for all RocksDB column families.
@@ -300,7 +300,7 @@
 
 [pd]
 ## PD endpoints.
-# endpoints = ["127.0.0.1:2379"]
+# endpoints = ["192.168.92.2:2379"]
 
 ## The interval at which to retry a PD connection initialization.
 ## Default is 300ms.

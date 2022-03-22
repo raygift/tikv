@@ -1590,12 +1590,12 @@ mod tests {
     #[test]
     fn test_check_addrs() {
         let table = vec![
-            ("127.0.0.1:8080", true),
+            ("192.168.92.3:8080", true),
             ("[::1]:8080", true),
             ("localhost:8080", true),
             ("pingcap.com:8080", true),
             ("funnydomain:8080", true),
-            ("127.0.0.1", false),
+            ("192.168.92.3", false),
             ("[::1]", false),
             ("localhost", false),
             ("pingcap.com", false),
@@ -1627,7 +1627,7 @@ mod tests {
         let table = vec![
             ("0.0.0.0:8080", true),
             ("[::0]:8080", true),
-            ("127.0.0.1:8080", false),
+            ("192.168.92.3:8080", false),
             ("[::1]:8080", false),
             ("localhost:8080", false),
             ("pingcap.com:8080", false),

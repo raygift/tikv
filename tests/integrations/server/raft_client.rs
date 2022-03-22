@@ -282,7 +282,7 @@ fn test_tombstone_block_list() {
 
     let mut store1 = metapb::Store::default();
     store1.set_id(1);
-    store1.set_address(format!("127.0.0.1:{}", port));
+    store1.set_address(format!("192.168.92.3:{}", port));
     pd_server.default_handler().add_store(store1.clone());
 
     // `send` should success.

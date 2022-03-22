@@ -401,7 +401,7 @@ mod tests {
         let test_cases = vec![
             (Some(b"0.0.0.0".to_vec()), Some(0)),
             (Some(b"255.255.255.255".to_vec()), Some(4294967295)),
-            (Some(b"127.0.0.1".to_vec()), Some(2130706433)),
+            (Some(b"192.168.92.3".to_vec()), Some(2130706433)),
             (Some(b"113.14.22.3".to_vec()), Some(1896748547)),
             (Some(b"1".to_vec()), Some(1)),
             (Some(b"0.1.2".to_vec()), Some(65538)),
@@ -533,7 +533,7 @@ mod tests {
     #[test]
     fn test_is_ipv4() {
         let test_cases = vec![
-            (Some(b"127.0.0.1".to_vec()), Some(1)),
+            (Some(b"192.168.92.3".to_vec()), Some(1)),
             (Some(b"127.0.0.256".to_vec()), Some(0)),
             (None, Some(0)),
         ];

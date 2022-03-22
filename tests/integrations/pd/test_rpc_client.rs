@@ -274,7 +274,7 @@ fn test_validate_endpoints_retry() {
     );
     let mut eps = server.bind_addrs();
     let mock_port = 65535;
-    eps.insert(0, ("127.0.0.1".to_string(), mock_port));
+    eps.insert(0, ("192.168.92.3".to_string(), mock_port));
     eps.pop();
     let mgr = Arc::new(SecurityManager::new(&SecurityConfig::default()).unwrap());
     let connector = PdConnector::new(env, mgr);
@@ -358,7 +358,7 @@ fn restart_leader(mgr: SecurityManager) {
     let mgr = Arc::new(mgr);
     // Service has only one GetMembersResponse, so the leader never changes.
     let mut server =
-        MockServer::<Service>::with_configuration(&mgr, vec![("127.0.0.1".to_owned(), 0); 3], None);
+        MockServer::<Service>::with_configuration(&mgr, vec![("192.168.92.3".to_owned(), 0); 3], None);
     let eps = server.bind_addrs();
 
     let client = new_client(eps.clone(), Some(Arc::clone(&mgr)));

@@ -19,9 +19,9 @@ pub use raftstore::store::Config as RaftStoreConfig;
 use super::snap::Task as SnapTask;
 
 pub const DEFAULT_CLUSTER_ID: u64 = 0;
-pub const DEFAULT_LISTENING_ADDR: &str = "127.0.0.1:20160";
+pub const DEFAULT_LISTENING_ADDR: &str = "192.168.92.3:20160";
 const DEFAULT_ADVERTISE_LISTENING_ADDR: &str = "";
-const DEFAULT_STATUS_ADDR: &str = "127.0.0.1:20180";
+const DEFAULT_STATUS_ADDR: &str = "192.168.92.3:20180";
 const DEFAULT_GRPC_CONCURRENCY: usize = 5;
 const DEFAULT_GRPC_CONCURRENT_STREAM: i32 = 1024;
 const DEFAULT_GRPC_RAFT_CONN_NUM: usize = 1;
@@ -453,7 +453,7 @@ mod tests {
         invalid_cfg = Config::default();
         invalid_cfg.addr = "0.0.0.0:1000".to_owned();
         assert!(invalid_cfg.validate().is_err());
-        invalid_cfg.advertise_addr = "127.0.0.1:1000".to_owned();
+        invalid_cfg.advertise_addr = "192.168.92.3:1000".to_owned();
         invalid_cfg.validate().unwrap();
 
         invalid_cfg = Config::default();
@@ -466,8 +466,8 @@ mod tests {
         assert!(invalid_cfg.validate().is_err());
 
         invalid_cfg = Config::default();
-        invalid_cfg.advertise_addr = "127.0.0.1:1000".to_owned();
-        invalid_cfg.advertise_status_addr = "127.0.0.1:1000".to_owned();
+        invalid_cfg.advertise_addr = "192.168.92.3:1000".to_owned();
+        invalid_cfg.advertise_status_addr = "192.168.92.3:1000".to_owned();
         assert!(invalid_cfg.validate().is_err());
 
         invalid_cfg = Config::default();

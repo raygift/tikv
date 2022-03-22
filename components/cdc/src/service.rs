@@ -298,10 +298,10 @@ mod tests {
         let env = Arc::new(EnvBuilder::new().build());
         let builder =
             ServerBuilder::new(env.clone()).register_service(create_change_data(cdc_service));
-        let mut server = builder.bind("127.0.0.1", 0).build().unwrap();
+        let mut server = builder.bind("192.168.92.3", 0).build().unwrap();
         server.start();
         let (_, port) = server.bind_addrs().next().unwrap();
-        let addr = format!("127.0.0.1:{}", port);
+        let addr = format!("192.168.92.3:{}", port);
         let channel = ChannelBuilder::new(env).connect(&addr);
         let client = ChangeDataClient::new(channel);
         (server, client, rx)
