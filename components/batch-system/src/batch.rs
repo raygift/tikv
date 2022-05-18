@@ -295,7 +295,7 @@ impl<N: Fsm, C: Fsm, Handler: PollHandler<N, C>> Poller<N, C, Handler> {
             // max size of batch. It's helpful to protect regions from becoming hungry
             // if some regions are hot points.
             let max_batch_size = std::cmp::max(self.max_batch_size, batch.normals.len());
-            self.handler.begin(max_batch_size);
+            self.handler.begin(max_batch_size);// 初始化poll_ctx 的一些参数
 
             if batch.control.is_some() {
                 let len = self.handler.handle_control(batch.control.as_mut().unwrap());
@@ -308,7 +308,7 @@ impl<N: Fsm, C: Fsm, Handler: PollHandler<N, C>> Poller<N, C, Handler> {
 
             let mut hot_fsm_count = 0;
             for (i, p) in batch.normals.iter_mut().enumerate() {
-                let len = self.handler.handle_normal(p);
+                let len = self.handler.handle_normal(p);// PollHandler 有两个实现（RaftPoller 和 ApplyPoller），因此 handle_normal 也有两个对应的方法实现
                 if p.is_stopped() {
                     reschedule_fsms.push((i, ReschedulePolicy::Remove));
                 } else if p.get_priority() != self.handler.get_priority() {
@@ -417,7 +417,7 @@ where
         let props = tikv_util::thread_group::current_properties();
         let t = thread::Builder::new()
             .name(name)
-            .spawn(move || {
+            .spawn(move || {// 创建新线程，每个线程执行一个 Actor poll 操作；“为了保证 线性一致性 ，一个 Actor 同时只会在一个 Poll 线程上接收消息并顺序执行”
                 tikv_util::thread_group::set_properties(props);
                 set_io_type(IOType::ForegroundWrite);
                 poller.poll();

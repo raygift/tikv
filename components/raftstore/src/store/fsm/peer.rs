@@ -100,6 +100,8 @@ impl CollectedReady {
     }
 }
 
+    // PeerFsm 用于接收和处理其他 Raft Peer 发送过来的 Raft 消息
+    // 它接收的消息为 PeerMsg，根据消息类型的不同会有不同的处理
 pub struct PeerFsm<EK, ER>
 where
     EK: KvEngine,
@@ -552,8 +554,8 @@ where
     EK: KvEngine,
     ER: RaftEngine,
 {
-    fsm: &'a mut PeerFsm<EK, ER>,
-    ctx: &'a mut PollContext<EK, ER, T>,
+    fsm: &'a mut PeerFsm<EK, ER>,// PeerFsm 用于接收和处理 Raft 消息
+    ctx: &'a mut PollContext<EK, ER, T>,// PollContext 用于暂存持久化状态（存放在 WriteBatch）和非持久化状态（存放在 InvokeContext 结构体）的更新
 }
 
 impl<'a, EK, ER, T: Transport> PeerFsmDelegate<'a, EK, ER, T>
@@ -567,11 +569,15 @@ where
     ) -> PeerFsmDelegate<'a, EK, ER, T> {
         PeerFsmDelegate { fsm, ctx }
     }
-
-    pub fn handle_msgs(&mut self, msgs: &mut Vec<PeerMsg<EK>>) {
+    
+    // PollHandler 先执行 delegate.handle_msgs 将msg 处理，该发往Raft 的proposal 也递交给了 Raft
+    // 然后执行 delegate.collect_ready
+    // PeerFsmDelegate::handle_msgs
+    // propose 流程的入口，调用 Peer::propose ，最终完成 Raft::propose 的调用
+    pub fn handle_msgs(&mut self, msgs: &mut Vec<PeerMsg<EK>>) {// 处理raft storage 层发送来的消息
         for m in msgs.drain(..) {
             match m {
-                PeerMsg::RaftMessage(msg) => {
+                PeerMsg::RaftMessage(msg) => {// 处理 raft 节点之间的消息 // 其他 Peer 发送过来 Raft 消息，包括心跳、日志、投票消息等。
                     if let Err(e) = self.on_raft_message(msg) {
                         error!(%e;
                             "handle raft message err";
@@ -580,7 +586,7 @@ where
                         );
                     }
                 }
-                PeerMsg::RaftCommand(cmd) => {
+                PeerMsg::RaftCommand(cmd) => {// 处理 raft Leader 节点收到的消息 // 上层提出的 proposal，其中包含了需要通过 Raft 同步的操作，以及操作成功之后需要调用的 callback 函数
                     self.ctx
                         .raft_metrics
                         .propose
@@ -607,15 +613,15 @@ where
                         }
                     } else {
                         self.propose_batch_raft_command();
-                        self.propose_raft_command(
-                            cmd.request,
-                            cmd.callback,
+                        self.propose_raft_command(// 向 raft 层提交cmd
+                            cmd.request,// 待通过raft 同步的cmd
+                            cmd.callback,// 操作成功之后需要调用的 callback 函数
                             cmd.extra_opts.disk_full_opt,
                         )
                     }
                 }
                 PeerMsg::Tick(tick) => self.on_tick(tick),
-                PeerMsg::ApplyRes { res } => {
+                PeerMsg::ApplyRes { res } => {// ApplyFsm 在将日志应用到状态机之后发送给 PeerFsm 的消息，用于在进行操作之后更新某些内存状态
                     self.on_apply_res(res);
                 }
                 PeerMsg::SignificantMsg(msg) => self.on_significant_msg(msg),
@@ -1041,7 +1047,7 @@ where
             }
         }
     }
-
+    // 本方法在 handle_msgs 之后执行
     pub fn collect_ready(&mut self) {
         let has_ready = self.fsm.has_ready;
         self.fsm.has_ready = false;
@@ -1050,7 +1056,8 @@ where
         }
         self.ctx.pending_count += 1;
         self.ctx.has_ready = true;
-        let res = self.fsm.peer.handle_raft_ready_append(self.ctx);
+        // TiKV blog: 在一个 Batch 的消息都经 PeerDelegate::handle_msgs 处理完毕之后，Poll 对 Batch 内的每一个 Peer 调用 Peer::handle_raft_ready_append
+        let res = self.fsm.peer.handle_raft_ready_append(self.ctx);// 调用 handle_raft_ready 获得装有 invokedContext 和 ready 的CollectedReady 数组
         if let Some(mut r) = res {
             // This bases on an assumption that fsm array passed in `end` method will have
             // the same order of processing.
@@ -1060,10 +1067,10 @@ where
                 self.register_raft_gc_log_tick();
                 self.register_entry_cache_evict_tick();
             }
-            self.ctx.ready_res.push(r);
+            self.ctx.ready_res.push(r);// 将对于 Raft 产生的 Ready 的 ctx.ready_res 元组中保存
         }
     }
-
+// PeerFsmDelegate 的方法，在ready 被持久化之后
     pub fn post_raft_ready_append(&mut self, ready: CollectedReady) {
         if ready.ctx.region_id != self.fsm.region_id() {
             panic!(
@@ -1078,8 +1085,8 @@ where
         let res = self
             .fsm
             .peer
-            .post_raft_ready_append(self.ctx, ctx, &mut ready);
-        self.fsm.peer.handle_raft_ready_advance(self.ctx, ready);
+            .post_raft_ready_append(self.ctx, ctx, &mut ready);// 使用已更新的持久化信息更新内存中记录的状态，并完成msg 的发送（以及快照的应用）
+        self.fsm.peer.handle_raft_ready_advance(self.ctx, ready);// 将 ready 发送给Apply 并创建 ApplyFsm
         if let Some(apply_res) = res {
             self.on_ready_apply_snapshot(apply_res);
             if is_merging {
@@ -3397,19 +3404,24 @@ where
         Ok(())
     }
 
+    // TiKV blog: 
+    // 对 peer ID, peer term, region epoch (region 的版本，
+    // region split、merge 和 add / delete peer 等操作会改变 region epoch) 是否匹配、 
+    // peer 是否 leader 等条件进行一系列检查，
+    // 并根据请求的类型（是读请求还是写请求），选择不同的 Propose 策略见（ Peer::inspect）
     fn pre_propose_raft_command(
         &mut self,
         msg: &RaftCmdRequest,
     ) -> Result<Option<RaftCmdResponse>> {
         // Check store_id, make sure that the msg is dispatched to the right place.
-        if let Err(e) = util::check_store_id(msg, self.store_id()) {
+        if let Err(e) = util::check_store_id(msg, self.store_id()) {// 检查msg 中 store_id 与 peer 的store_id 是否匹配
             self.ctx.raft_metrics.invalid_proposal.mismatch_store_id += 1;
             return Err(e);
         }
-        if msg.has_status_request() {
+        if msg.has_status_request() {// 判断msg 是获取 region status 的请求，peer 是可以直接获得 region meta 信息的，无需通过 Raft 达成共识
             // For status commands, we handle it here directly.
-            let resp = self.execute_status_command(msg)?;
-            return Ok(Some(resp));
+            let resp = self.execute_status_command(msg)?;// 获取 peer 上 region 的meta 信息
+            return Ok(Some(resp));// 返回 peer 上region 的状态信息
         }
 
         // Check whether the store has the right peer to handle the request.
@@ -3430,16 +3442,16 @@ where
         let allow_replica_read = read_only && msg.get_header().get_replica_read();
         let flags = WriteBatchFlags::from_bits_check(msg.get_header().get_flags());
         let allow_stale_read = read_only && flags.contains(WriteBatchFlags::STALE_READ);
-        if !self.fsm.peer.is_leader()
+        if !self.fsm.peer.is_leader()// 若peer 节点的 raft 角色不是leader，同时未开启副本读等配置
             && !is_read_index_request
             && !allow_replica_read
             && !allow_stale_read
         {
             self.ctx.raft_metrics.invalid_proposal.not_leader += 1;
-            let leader = self.fsm.peer.get_peer_from_cache(leader_id);
+            let leader = self.fsm.peer.get_peer_from_cache(leader_id);// 获取cache 中记录的leader id
             self.fsm.reset_hibernate_state(GroupState::Chaos);
             self.register_raft_base_tick();
-            return Err(Error::NotLeader(region_id, leader));
+            return Err(Error::NotLeader(region_id, leader));// 向非leader 执行读取，且未开启副本读取的配置，则响应NotLeader错误，并携带cache 中记录的leader id
         }
         // peer_id must be the same as peer's.
         if let Err(e) = util::check_peer_id(msg, self.fsm.peer.peer_id()) {
@@ -3482,24 +3494,25 @@ where
                 Err(Error::EpochNotMatch(m, new_regions))
             }
             Err(e) => Err(e),
-            Ok(()) => Ok(None),
+            Ok(()) => Ok(None),// 检查正常，且 pre_propose_raft_command 无法直接处理并返回response，则返回Ok(None)，调用方将继续尝试通过 Raft 同步完成commit 并获得response
         }
     }
 
+    // 调用 Peer::propose 完成向 raft 层发起 proposal
     fn propose_raft_command(
         &mut self,
         mut msg: RaftCmdRequest,
         cb: Callback<EK::Snapshot>,
         diskfullopt: DiskFullOpt,
     ) {
-        match self.pre_propose_raft_command(&msg) {
-            Ok(Some(resp)) => {
-                cb.invoke_with_response(resp);
+        match self.pre_propose_raft_command(&msg) {// 根据记录的peer 状态对cmd 中参数进行检查
+            Ok(Some(resp)) => {// pre_propose_raft_command 直接处理并得到了 response，
+                cb.invoke_with_response(resp);// 则调用 callback 处理 response
                 return;
             }
-            Err(e) => {
-                debug!(
-                    "failed to propose";
+            Err(e) => {// 检查出问题，返回错误
+            debug!(
+                "failed to propose";
                     "region_id" => self.region_id(),
                     "peer_id" => self.fsm.peer_id(),
                     "message" => ?msg,
@@ -3508,7 +3521,7 @@ where
                 cb.invoke_with_response(new_error(e));
                 return;
             }
-            _ => (),
+            _ => (),// pre_propose_raft_command 检查正常，且 pre_propose_raft_command 无法直接处理并返回response，则返回Ok(None)，调用方将继续尝试通过 Raft 同步完成commit 并获得response
         }
 
         if self.fsm.peer.pending_remove {
@@ -3537,7 +3550,7 @@ where
         let mut resp = RaftCmdResponse::default();
         let term = self.fsm.peer.term();
         bind_term(&mut resp, term);
-        if self.fsm.peer.propose(self.ctx, cb, msg, resp, diskfullopt) {
+        if self.fsm.peer.propose(self.ctx, cb, msg, resp, diskfullopt) {// 调用 Peer::propose 并最终调用到 Raft::propose，并将提交给Raft 的proposal 记录到队列中， Peer::propose（raftstore/src/store/peer.rs）
             self.fsm.has_ready = true;
         }
 
@@ -4351,22 +4364,23 @@ where
     // to another file later.
     // Unlike other commands (write or admin), status commands only show current
     // store status, so no need to handle it in raft group.
+    // 不像写入或管理节点的操作，status 命令只用来展示存储的状态，因此无需使用 raft 进行一致性处理
     fn execute_status_command(&mut self, request: &RaftCmdRequest) -> Result<RaftCmdResponse> {
         let cmd_type = request.get_status_request().get_cmd_type();
 
         let mut response = match cmd_type {
             StatusCmdType::RegionLeader => self.execute_region_leader(),
-            StatusCmdType::RegionDetail => self.execute_region_detail(request),
+            StatusCmdType::RegionDetail => self.execute_region_detail(request),// response 中包括peer 对应的region 信息（region_id，start_key 等）
             StatusCmdType::InvalidStatus => {
                 Err(box_err!("{} invalid status command!", self.fsm.peer.tag))
             }
         }?;
-        response.set_cmd_type(cmd_type);
+        response.set_cmd_type(cmd_type);// 设置响应对应的cmd type
 
         let mut resp = RaftCmdResponse::default();
         resp.set_status_response(response);
         // Bind peer current term here.
-        bind_term(&mut resp, self.fsm.peer.term());
+        bind_term(&mut resp, self.fsm.peer.term());// 设置响应对应的当前peer term
         Ok(resp)
     }
 
@@ -4379,6 +4393,7 @@ where
         Ok(resp)
     }
 
+    // 响应region leader 等信息
     fn execute_region_detail(&mut self, request: &RaftCmdRequest) -> Result<StatusResponse> {
         if !self.fsm.peer.get_store().is_initialized() {
             let region_id = request.get_header().get_region_id();
@@ -4386,7 +4401,7 @@ where
         }
         let mut resp = StatusResponse::default();
         resp.mut_region_detail()
-            .set_region(self.fsm.peer.region().clone());
+            .set_region(self.fsm.peer.region().clone());// 获取 peer 的region 信息，包括 region.id、start_key 等信息，并克隆值赋值给resp
         if let Some(leader) = self.fsm.peer.get_peer_from_cache(self.fsm.peer.leader_id()) {
             resp.mut_region_detail().set_leader(leader);
         }

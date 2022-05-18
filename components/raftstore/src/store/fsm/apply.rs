@@ -484,9 +484,9 @@ where
     /// This call is valid only when it's between a `prepare_for` and `finish_for`.
     pub fn commit(&mut self, delegate: &mut ApplyDelegate<EK>) {
         if delegate.last_flush_applied_index < delegate.apply_state.get_applied_index() {
-            delegate.write_apply_state(self.kv_wb_mut());
+            delegate.write_apply_state(self.kv_wb_mut());// RaftApplyState 用来保存最新的 applied index ，此处将最新的applied index 放入 write batch
         }
-        self.commit_opt(delegate, true);
+        self.commit_opt(delegate, true);// 将 write batch 中的数据持久化到 rocksdb
     }
 
     fn commit_opt(&mut self, delegate: &mut ApplyDelegate<EK>, persistent: bool) {
@@ -573,15 +573,17 @@ where
     }
 
     /// Finishes `Apply`s for the delegate.
+    /// 调用 write_to_db
+    /// 创建新的 ApplyRes 并压入 apply_res 元组
     pub fn finish_for(
         &mut self,
         delegate: &mut ApplyDelegate<EK>,
         results: VecDeque<ExecResult<EK::Snapshot>>,
     ) {
         if !delegate.pending_remove {
-            delegate.write_apply_state(self.kv_wb_mut());
+            delegate.write_apply_state(self.kv_wb_mut());// 将 apply state 持久化
         }
-        self.commit_opt(delegate, false);
+        self.commit_opt(delegate, false);// 调用 write_to_db 完成 write batch 写入 rocksdb 的操作
         self.apply_res.push(ApplyRes {
             region_id: delegate.region_id(),
             apply_state: delegate.apply_state.clone(),
@@ -1004,7 +1006,7 @@ where
                 }
             }
         }
-        apply_ctx.finish_for(self, results);
+        apply_ctx.finish_for(self, results);// 调用 write_to_db
 
         if self.pending_remove {
             self.destroy(apply_ctx);
@@ -1030,6 +1032,10 @@ where
         });
     }
 
+    // 完成对普通 raft cmd 的处理，包括：
+    // 从 entry 反序列化出原始 raft cmd request，
+    // 将执行 cmd 得到的 response 与 callback 一起压入 applied_batch 中，
+    // 根据最新 applied index 更新 RaftApplyState
     fn handle_raft_entry_normal<W: WriteBatch<EK>>(
         &mut self,
         apply_ctx: &mut ApplyContext<EK, W>,
@@ -1043,18 +1049,18 @@ where
         let term = entry.get_term();
         let data = entry.get_data();
 
-        if !data.is_empty() {
-            let cmd = util::parse_data_at(data, index, &self.tag);
+        if !data.is_empty() {// entry.data 保存的是 raft cmd request 被系列化之后的内容
+            let cmd = util::parse_data_at(data, index, &self.tag);// 从data 中反序列化得到 raft cmd request
 
             if apply_ctx.yield_high_latency_operation && has_high_latency_operation(&cmd) {
                 self.priority = Priority::Low;
             }
             let mut has_unflushed_data =
-                self.last_flush_applied_index != self.apply_state.get_applied_index();
+                self.last_flush_applied_index != self.apply_state.get_applied_index();// 判断是否有待apply 的日志
             if has_unflushed_data && should_write_to_engine(&cmd)
-                || apply_ctx.kv_wb().should_write_to_engine()
+                || apply_ctx.kv_wb().should_write_to_engine()// 达到需要执行 apply 的条件
             {
-                apply_ctx.commit(self);
+                apply_ctx.commit(self);// 将最新的 applied index 持久化到 RaftApplyState 
                 if let Some(start) = self.handle_start.as_ref() {
                     if start.saturating_elapsed() >= apply_ctx.yield_duration {
                         return ApplyResult::Yield;
@@ -1069,7 +1075,7 @@ where
                 return ApplyResult::Yield;
             }
 
-            return self.process_raft_cmd(apply_ctx, index, term, cmd);
+            return self.process_raft_cmd(apply_ctx, index, term, cmd);// 对 raft cmd request 执行对应的 cmd 并得到 response，然后将已经完善了 response 的cmd 与对应的 callback 一起放入 applied_batch 中
         }
         // TOOD(cdc): should we observe empty cmd, aka leader change?
 
@@ -1201,11 +1207,11 @@ where
         // TODO: if we have exec_result, maybe we should return this callback too. Outer
         // store will call it after handing exec result.
         cmd_resp::bind_term(&mut resp, self.term);
-        let cmd_cb = self.find_pending(index, term, is_conf_change_cmd(&cmd));
+        let cmd_cb = self.find_pending(index, term, is_conf_change_cmd(&cmd));// 根据 cmd 的 index 和 term 找到对应的 callback
         let cmd = Cmd::new(index, cmd, resp);
         apply_ctx
             .applied_batch
-            .push(cmd_cb, cmd, &self.observe_info, self.region_id());
+            .push(cmd_cb, cmd, &self.observe_info, self.region_id());// 将包含了 response 的cmd 与 对应的 callback 压入 applied_batch，批量进行应用
         exec_result
     }
 
@@ -1217,6 +1223,12 @@ where
     ///   2. it encounters an error that may not occur on all stores, in this case
     /// we should try to apply the entry again or panic. Considering that this
     /// usually due to disk operation fail, which is rare, so just panic is ok.
+    ///     
+    /// 应用 raft 命令
+    /// 应用操作可能在如下情形时失败：
+    /// 1. 可能遇到一个将在所有节点上出错的错误，可以继续安全地应用下一条日志，比如 epoch 不匹配的错误；
+    /// 2. 遇到的错误可能不会在所有节点上出现，这种情况需要再次尝试应用，或者直接panic。
+    ///    考虑到这通常是由于磁盘操作错误导致，而且很少出现，因此直接panic 是可以的
     fn apply_raft_cmd<W: WriteBatch<EK>>(
         &mut self,
         ctx: &mut ApplyContext<EK, W>,
@@ -1228,11 +1240,11 @@ where
         assert!(!self.pending_remove);
 
         ctx.exec_ctx = Some(self.new_ctx(index, term));
-        ctx.kv_wb_mut().set_save_point();
+        ctx.kv_wb_mut().set_save_point();// 设置保存点？
         let mut origin_epoch = None;
         let (resp, exec_result) = match self.exec_raft_cmd(ctx, req) {
             Ok(a) => {
-                ctx.kv_wb_mut().pop_save_point().unwrap();
+                ctx.kv_wb_mut().pop_save_point().unwrap();// raft cmd 执行成功，删除保存点
                 if req.has_admin_request() {
                     origin_epoch = Some(self.region.get_region_epoch().clone());
                 }
@@ -1366,6 +1378,7 @@ where
     EK: KvEngine,
 {
     // Only errors that will also occur on all other stores should be returned.
+    // 执行从 entry 反序列化得到的 raft cmd request（put/get/delete/snap）或 admin cmd
     fn exec_raft_cmd<W: WriteBatch<EK>>(
         &mut self,
         ctx: &mut ApplyContext<EK, W>,
@@ -1378,7 +1391,7 @@ where
         if req.has_admin_request() {
             self.exec_admin_cmd(ctx, req)
         } else {
-            self.exec_write_cmd(ctx, req)
+            self.exec_write_cmd(ctx, req)// 执行数据操作cmd，返回requests 对应的 responses
         }
     }
 
@@ -1426,6 +1439,7 @@ where
         Ok((resp, exec_result))
     }
 
+    // 执行对 kvDB 的数据操作
     fn exec_write_cmd<W: WriteBatch<EK>>(
         &mut self,
         ctx: &mut ApplyContext<EK, W>,
@@ -1440,7 +1454,7 @@ where
         );
 
         let requests = req.get_requests();
-        let mut responses = Vec::with_capacity(requests.len());
+        let mut responses = Vec::with_capacity(requests.len());// 创建responses 元组保存requests 对应的response
 
         let mut ranges = vec![];
         let mut ssts = vec![];
@@ -1473,7 +1487,7 @@ where
 
             resp.set_cmd_type(cmd_type);
 
-            responses.push(resp);
+            responses.push(resp);// 将 request 对应的 response 追加到 responses 元组
         }
 
         let mut resp = RaftCmdResponse::default();
@@ -1481,7 +1495,7 @@ where
             let uuid = req.get_header().get_uuid().to_vec();
             resp.mut_header().set_uuid(uuid);
         }
-        resp.set_responses(responses.into());
+        resp.set_responses(responses.into());// 将 responses 元组 赋值给 RaftCmdResponse
 
         assert!(ranges.is_empty() || ssts.is_empty());
         let exec_res = if !ranges.is_empty() {
@@ -1511,10 +1525,11 @@ impl<EK> ApplyDelegate<EK>
 where
     EK: KvEngine,
 {
+    // 处理 raftcmd 的 put 操作
     fn handle_put<W: WriteBatch<EK>>(&mut self, wb: &mut W, req: &Request) -> Result<Response> {
-        let (key, value) = (req.get_put().get_key(), req.get_put().get_value());
+        let (key, value) = (req.get_put().get_key(), req.get_put().get_value());// 获得 request 中put 操作的目标k:v
         // region key range has no data prefix, so we must use origin key to check.
-        util::check_key_in_region(key, &self.region)?;
+        util::check_key_in_region(key, &self.region)?;// 检查 put 的操作目标 key 是否被分配在当前region 的范围内
 
         let resp = Response::default();
         let key = keys::data_key(key);
@@ -2864,7 +2879,7 @@ impl<S: Snapshot> Apply<S> {
                 if now.is_none() {
                     now = Some(Instant::now());
                 }
-                for t in request_times {
+                for t in request_times {// 遍历所有proposal 的收到请求的时间，在 prometheus 的直方图中添加一个proposal 耗时的测量记录
                     metrics
                         .store_time
                         .observe(duration_to_sec(now.unwrap().saturating_duration_since(*t)));
@@ -3164,6 +3179,8 @@ where
         ApplyFsm::from_registration(reg)
     }
 
+    // 根据传入的 Registration 创建 ApplyDelegate
+    // 并创建 ApplyFsm
     fn from_registration(reg: Registration) -> (LooseBoundedSender<Msg<EK>>, Box<ApplyFsm<EK>>) {
         let (tx, rx) = loose_bounded(usize::MAX);
         let delegate = ApplyDelegate::from_registration(reg);

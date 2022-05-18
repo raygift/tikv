@@ -411,7 +411,7 @@ where
     /// Record the last instant of each peer's heartbeat response.
     pub peer_heartbeats: HashMap<u64, Instant>,
 
-    proposals: ProposalQueue<EK::Snapshot>,
+    proposals: ProposalQueue<EK::Snapshot>,// 已经提交到 Raft::propose 的 proposal，需要暂存并在后续根据cb 判断 proposal 是否被成功提交
     leader_missing_time: Option<Instant>,
     leader_lease: Lease,
     pending_reads: ReadIndexQueue<EK::Snapshot>,
@@ -1042,6 +1042,8 @@ where
         self.raft_group.snap()
     }
 
+    // 使用 Ready 结构体中信息，更新 RaftReadyMetrics；
+    // RaftReadyMetrics 是用来衡量正在处理的 Ready 结构体所携带的 message、entries、snapshot 等的数量
     fn add_ready_metric(&self, ready: &Ready, metrics: &mut RaftReadyMetrics) {
         metrics.message += ready.messages().len() as u64;
         metrics.commit += ready.committed_entries().len() as u64;
@@ -1567,12 +1569,14 @@ where
             && self.dr_auto_sync_state != DrAutoSyncState::Async
             && !self.replication_sync
     }
-
+// 处理 Ready 数据
+// 首先从 rawNode 获得一个 Ready 数据
+// 将 entries 写入 Storage
     pub fn handle_raft_ready_append<T: Transport>(
         &mut self,
         ctx: &mut PollContext<EK, ER, T>,
     ) -> Option<CollectedReady> {
-        if self.pending_remove {
+        if self.pending_remove {// 当前节点被异步删除
             return None;
         }
         match self.mut_store().check_applying_snap() {
@@ -1628,7 +1632,7 @@ where
         }
 
         let mut destroy_regions = vec![];
-        if self.has_pending_snapshot() {
+        if self.has_pending_snapshot() {// 判断是否有pending 的snapshot，若有则先处理snapshot
             if !self.ready_to_handle_pending_snap() {
                 let count = self.pending_request_snapshot_count.load(Ordering::SeqCst);
                 debug!(
@@ -1664,7 +1668,7 @@ where
             }
         }
 
-        if !self.raft_group.has_ready() {
+        if !self.raft_group.has_ready() {// 判断是否有 ready 结构体
             fail_point!("before_no_ready_gen_snap_task", |_| None);
             // Generating snapshot task won't set ready for raft group.
             if let Some(gen_task) = self.mut_store().take_gen_snap_task() {
@@ -1694,7 +1698,7 @@ where
             "peer_id" => self.peer.get_id(),
         );
 
-        let mut ready = self.raft_group.ready();
+        let mut ready = self.raft_group.ready();// 从 rawnode 获得一个 Ready 结构体
 
         // Update it after unstable entries pagination is introduced.
         debug_assert!(ready.entries().last().map_or_else(
@@ -1704,12 +1708,12 @@ where
         MEMTRACE_RAFT_ENTRIES.trace(TraceEvent::Sub(self.memtrace_raft_entries));
         self.memtrace_raft_entries = 0;
 
-        self.last_unpersisted_number = ready.number();
+        self.last_unpersisted_number = ready.number();// 获取 Ready 的编号，用于区别不同的Ready，以及区别不同的 ReadyRecord
 
-        if !ready.must_sync() {
+        if !ready.must_sync() {// 当 term 或 vote 有变化时，ready 才是 must_sync 的；否则可以认为 term 和 vote 没有变化
             // If this ready need not to sync, the term, vote must not be changed,
             // entries and snapshot must be empty.
-            if let Some(hs) = ready.hs() {
+            if let Some(hs) = ready.hs() {// 断言检查Ready 中hs记录的 term 和 vote 与peer 节点已持久化的hs 所记录的 term 和vote 没有变化
                 assert_eq!(hs.get_term(), self.get_store().hard_state().get_term());
                 assert_eq!(hs.get_vote(), self.get_store().hard_state().get_vote());
             }
@@ -1717,30 +1721,30 @@ where
             assert!(ready.snapshot().is_empty());
         }
 
-        self.add_ready_metric(&ready, &mut ctx.raft_metrics.ready);
+        self.add_ready_metric(&ready, &mut ctx.raft_metrics.ready);// 更新 ctx 中RaftReadyMetrics，记录下Ready 所携带的message、entries 等数量
 
-        self.on_role_changed(ctx, &ready);
+        self.on_role_changed(ctx, &ready);// 当节点角色发生变化时
 
-        if let Some(hs) = ready.hs() {
-            let pre_commit_index = self.get_store().commit_index();
+        if let Some(hs) = ready.hs() {// 根据 Ready 中的 hard state 判断leader 的commit index 是否需要更新
+            let pre_commit_index = self.get_store().commit_index();// 持久存储中记录的已提交日志的 index
             assert!(hs.get_commit() >= pre_commit_index);
             if self.is_leader() {
-                self.on_leader_commit_idx_changed(pre_commit_index, hs.get_commit());
+                self.on_leader_commit_idx_changed(pre_commit_index, hs.get_commit());// 因为更新commit index会影响到region 是否 split/merge，且会影响读请求的处理逻辑，此处对这些影响进行处理
             }
         }
 
-        if !ready.messages().is_empty() {
+        if !ready.messages().is_empty() {// 若 ready 结构体中有需要处理的 message，由 raftstore 层完成消息发送
             if !self.is_leader() {
                 fail_point!("raft_before_follower_send");
             }
             let msgs = ready.take_messages();
-            self.send(ctx, msgs);
+            self.send(ctx, msgs);// Peer::send 完成 raft msg 的发送
         }
 
-        self.apply_reads(ctx, &ready);
+        self.apply_reads(ctx, &ready);// 处理 ready 结构体中包含的只读请求（ReadState）
 
-        if !ready.committed_entries().is_empty() {
-            self.handle_raft_committed_entries(ctx, ready.take_committed_entries());
+        if !ready.committed_entries().is_empty() {// READY 中存在已经完成提交，需要应用到状态机的日志
+            self.handle_raft_committed_entries(ctx, ready.take_committed_entries());// 将包含待提交日志的提交任务传递给 apply_router 进行调度执行
         }
         // Check whether there is a pending generate snapshot task, the task
         // needs to be sent to the apply system.
@@ -1755,7 +1759,7 @@ where
 
         let invoke_ctx = match self
             .mut_store()
-            .handle_raft_ready(ctx, &mut ready, destroy_regions)
+            .handle_raft_ready(ctx, &mut ready, destroy_regions)// 调用 PeerStorage::handle_raft_ready，更新状态（term，last log index 等）和日志
         {
             Ok(r) => r,
             Err(e) => {
@@ -1765,7 +1769,7 @@ where
             }
         };
 
-        Some(CollectedReady::new(invoke_ctx, ready))
+        Some(CollectedReady::new(invoke_ctx, ready))// 新建CollectedReady 结构体保存包含内存状态的InvokeContext，以及ready 结构体
     }
 
     pub fn post_raft_ready_append<T: Transport>(
@@ -1781,7 +1785,7 @@ where
             self.read_progress.pause();
         }
 
-        let apply_snap_result = self.mut_store().post_ready(invoke_ctx);
+        let apply_snap_result = self.mut_store().post_ready(invoke_ctx);// 根据已持久化的Ready 信息更新PeerStorage 记录内容
         let has_msg = !ready.persisted_messages().is_empty();
 
         if apply_snap_result.is_some() {
@@ -1810,7 +1814,7 @@ where
             let mut meta = ctx.store_meta.lock().unwrap();
             meta.readers
                 .insert(self.region_id, ReadDelegate::from_peer(self));
-        } else if has_msg {
+        } else if has_msg {// 不存在待应用的快照，但存在要发送的消息
             let msgs = ready.take_persisted_messages();
             self.send(ctx, msgs);
         }
@@ -1818,6 +1822,7 @@ where
         apply_snap_result
     }
 
+    // 将已经在 raft 层完成提交的日志应用到状态机
     pub fn handle_raft_committed_entries<T>(
         &mut self,
         ctx: &mut PollContext<EK, ER, T>,
@@ -1839,7 +1844,7 @@ where
             // If we do not renew it, this time may be smaller than propose_time of a command,
             // which was proposed in another thread while this thread receives its AppendEntriesResponse
             // and is ready to calculate its commit-log-duration.
-            ctx.current_time.replace(monotonic_raw_now());
+            ctx.current_time.replace(monotonic_raw_now());// ctx.current_time 可能比 propose_time 要小，会影响完成提交的耗时计算，因此更新 current_time
         }
         // Leader needs to update lease.
         let mut lease_to_be_updated = self.is_leader();
@@ -1870,7 +1875,7 @@ where
                 |_| {}
             );
         }
-        if let Some(last_entry) = committed_entries.last() {
+        if let Some(last_entry) = committed_entries.last() {// 需要应用的日志中最大的index
             self.last_applying_idx = last_entry.get_index();
             if self.last_applying_idx >= self.last_urgent_proposal_idx {
                 // Urgent requests are flushed, make it lazy again.
@@ -1883,10 +1888,10 @@ where
                     .iter()
                     .filter_map(|e| {
                         self.proposals
-                            .find_proposal(e.get_term(), e.get_index(), current_term)
-                    })
+                            .find_proposal(e.get_term(), e.get_index(), current_term)// 从 proposalQueue 中找到与待应用记录的term 和 index 符合的proposal
+                    })// 每个待应用的日志对应的proposal
                     .map(|mut p| {
-                        if p.must_pass_epoch_check {
+                        if p.must_pass_epoch_check {// 必要时唤起 on_committed 回调
                             // In this case the apply can be guaranteed to be successful. Invoke the
                             // on_committed callback if necessary.
                             p.cb.invoke_committed();
@@ -1903,17 +1908,17 @@ where
                 self.peer_id(),
                 self.region_id,
                 self.term(),
-                committed_entries,
-                cbs,
+                committed_entries,// 将待应用的日志封装到 Apply 结构体
+                cbs,// 记录每个proposal 对应的callback，以便在proposal 成功后执行回调返回响应？
             );
-            apply.on_schedule(&ctx.raft_metrics);
+            apply.on_schedule(&ctx.raft_metrics);// 为prometheus 添加监控数据
             self.mut_store().trace_cached_entries(apply.entries.clone());
-            if needs_evict_entry_cache(ctx.cfg.evict_cache_on_memory_ratio) {
+            if needs_evict_entry_cache(ctx.cfg.evict_cache_on_memory_ratio) {// 更新 entry 缓存？
                 // Compact all cached entries instead of half evict.
                 self.mut_store().evict_cache(false);
             }
             ctx.apply_router
-                .schedule_task(self.region_id, ApplyTask::apply(apply));
+                .schedule_task(self.region_id, ApplyTask::apply(apply));// ApplyTask::apply()将 Apply 结构体封装为 Msg ，再由schedule_task() 将 msg 发送结果创建ApplyDelegate 和ApplyFsm
         }
         fail_point!("after_send_to_apply_1003", self.peer_id() == 1003, |_| {});
     }
@@ -1938,16 +1943,20 @@ where
             return;
         }
 
+        // 调用 rawNode 的方法更新 Raft 层状态，
+        // 例如：将 unstable entries 清空并更新 unstable offset
+        // 最后返回 raftLog 中最新的全部已提交待应用的日志，保存到 light ready 中
         let mut light_rd = self.raft_group.advance_append(ready);
 
         self.add_light_ready_metric(&light_rd, &mut ctx.raft_metrics.ready);
 
-        if let Some(commit_index) = light_rd.commit_index() {
+        {// 若light rd 存在 commit index，则说明 raftLog 中已提交待应用的日志数量多于 ready 结构体记录的数量
+        if let Some(commit_index) = light_rd.commit_index() 
             let pre_commit_index = self.get_store().commit_index();
             assert!(commit_index >= pre_commit_index);
             // No need to persist the commit index but the one in memory
             // (i.e. commit of hardstate in PeerStorage) should be updated.
-            self.mut_store().set_commit_index(commit_index);
+            self.mut_store().set_commit_index(commit_index);// 更新 peerStorage 记录的committed index
             if self.is_leader() {
                 self.on_leader_commit_idx_changed(pre_commit_index, commit_index);
             }
@@ -1962,7 +1971,7 @@ where
         }
 
         if !light_rd.committed_entries().is_empty() {
-            self.handle_raft_committed_entries(ctx, light_rd.take_committed_entries());
+            self.handle_raft_committed_entries(ctx, light_rd.take_committed_entries());// 将已提交待应用的日志发送给 applyfsm
         }
     }
 
@@ -2091,9 +2100,10 @@ where
         };
         read_cb.invoke_read(read_resp);
     }
-
+// 从Ready 结构体中获得了读请求的处理结果，将请求结果应用（也即执行advance 将此前被pending 的读请求返回结果）
     fn apply_reads<T>(&mut self, ctx: &mut PollContext<EK, ER, T>, ready: &Ready) {
         let mut propose_time = None;
+        // ReadState provides state for read only query.
         let states = ready.read_states().iter().map(|state| {
             let read_index_ctx = ReadIndexContext::parse(state.request_ctx.as_slice()).unwrap();
             (read_index_ctx.id, read_index_ctx.locked, state.index)
@@ -2108,7 +2118,7 @@ where
             // the function.
             self.pending_reads.advance_replica_reads(states);
             self.post_pending_read_index_on_replica(ctx);
-        } else {
+        } else {// 当前peer 是leader
             self.pending_reads.advance_leader_reads(states);
             propose_time = self.pending_reads.last_ready().map(|r| r.propose_time);
             if self.ready_to_handle_read() {
@@ -2285,6 +2295,9 @@ where
         true
     }
 
+    // Peer::propose
+    // 执行 inspect 获取处理 propose 的策略，并根据不同策略执行propose（例如propose_normal）并最终调用到 Raft::ProposedAdminCmd
+    // 调用 Raft::propose 之后将 proposal 加入到 Peer 的属性 proposals 队列中，等待后续处理
     /// Propose a request.
     ///
     /// Return true means the request has been proposed successfully.
@@ -2309,7 +2322,7 @@ where
         };
         let is_urgent = is_request_urgent(&req);
 
-        let policy = self.inspect(&req);
+        let policy = self.inspect(&req);// 根据请求的类型（是读请求还是写请求），选择不同的 Propose 策略，见（ Peer::inspect）
         let res = match policy {
             Ok(RequestPolicy::ReadLocal) | Ok(RequestPolicy::StaleRead) => {
                 self.read_local(ctx, req, cb);
@@ -2319,10 +2332,10 @@ where
             Ok(RequestPolicy::ProposeTransferLeader) => {
                 return self.propose_transfer_leader(ctx, req, cb);
             }
-            Ok(RequestPolicy::ProposeNormal) => {
+            Ok(RequestPolicy::ProposeNormal) => {// 对于写请求，选用 ProposeNormal 策略
                 let mut stores = Vec::new();
                 if self.check_disk_usages_before_propose(ctx, disk_full_opt, &mut stores) {
-                    self.propose_normal(ctx, req)
+                    self.propose_normal(ctx, req)// 返回 Ok(Either::Left(propose_index))
                 } else {
                     let errmsg = format!(
                         "propose failed: tikv disk full, cmd-disk_full_opt={:?}, leader-diskUsage={:?}",
@@ -2358,7 +2371,7 @@ where
                 }
                 false
             }
-            Ok(Either::Left(idx)) => {
+            Ok(Either::Left(idx)) => {// propose_normal 完成之后执行
                 let has_applied_to_current_term = self.has_applied_to_current_term();
                 if has_applied_to_current_term {
                     // After this peer has applied to current term and passed above checking including `cmd_epoch_checker`,
@@ -2373,7 +2386,7 @@ where
                     self.raft_group.skip_bcast_commit(false);
                 }
                 self.should_wake_up = true;
-                let p = Proposal {
+                let p = Proposal {// 创建 Proposal 结构体，其中 index 为 propose_normal 返回的index
                     is_conf_change: req_admin_cmd_type == Some(AdminCmdType::ChangePeer)
                         || req_admin_cmd_type == Some(AdminCmdType::ChangePeerV2),
                     index: idx,
@@ -2386,12 +2399,12 @@ where
                     self.cmd_epoch_checker
                         .post_propose(cmd_type, idx, self.term());
                 }
-                self.post_propose(ctx, p);
+                self.post_propose(ctx, p);// 将新创建的Proposal 结构体压入 proposals 队列中，待后续处理
                 true
             }
         }
     }
-
+// 在上方的 Peer::propose 中，执行完 propose_normal 之后将
     fn post_propose<T>(
         &mut self,
         poll_ctx: &mut PollContext<EK, ER, T>,
@@ -2997,6 +3010,7 @@ where
     /// Returns Ok(Either::Left(index)) means the proposal is proposed successfully and is located on `index` position.
     /// Ok(Either::Right(index)) means the proposal is rejected by `CmdEpochChecker` and the `index` is the position of
     /// the last conflict admin cmd.
+    // 向 Raft 提交 写操作cmd 的入口，会调用到 raw_node 的 propose，从而使得 Raft 进入 step 方法处理中
     fn propose_normal<T>(
         &mut self,
         poll_ctx: &mut PollContext<EK, ER, T>,
@@ -3064,7 +3078,7 @@ where
         }
 
         let propose_index = self.next_proposal_index();
-        self.raft_group.propose(ctx.to_vec(), data)?;
+        self.raft_group.propose(ctx.to_vec(), data)?;// 调用 rawnode 的 propose 方法 Raft::propose
         if self.next_proposal_index() == propose_index {
             // The message is dropped silently, this usually due to leader absence
             // or transferring leader. Both cases can be considered as NotLeader error.

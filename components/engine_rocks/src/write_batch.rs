@@ -12,7 +12,7 @@ const WRITE_BATCH_MAX_BATCH: usize = 16;
 const WRITE_BATCH_LIMIT: usize = 16;
 
 impl WriteBatchExt for RocksEngine {
-    type WriteBatch = RocksWriteBatch;
+    type WriteBatch = RocksWriteBatch;// 创建 RocksWriteBatch 的别名 WriteBatch
     type WriteBatchVec = RocksWriteBatchVec;
 
     const WRITE_BATCH_MAX_KEYS: usize = 256;

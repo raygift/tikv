@@ -432,6 +432,8 @@ pub struct ApplySnapResult {
 
 /// Returned by `PeerStorage::handle_raft_ready`, used for recording changed status of
 /// `RaftLocalState` and `RaftApplyState`.
+// InvokeContext 用来记录 RaftLocalState 和 RaftApplyState 的状态；
+// InvokeContext 作为 handle_raft_ready 的返回值，每次处理完 Ready 后可能会更新
 pub struct InvokeContext {
     pub region_id: u64,
     /// Changed RaftLocalState is stored into `raft_state`.
@@ -1126,21 +1128,21 @@ where
         entries: Vec<Entry>,
         ready_ctx: &mut H,
     ) -> Result<u64> {
-        let region_id = self.get_region_id();
+        let region_id = self.get_region_id();// 获得 peer 在对应的 Region 中的 id
         debug!(
             "append entries";
             "region_id" => region_id,
             "peer_id" => self.peer_id,
             "count" => entries.len(),
         );
-        let prev_last_index = invoke_ctx.raft_state.get_last_index();
-        if entries.is_empty() {
+        let prev_last_index = invoke_ctx.raft_state.get_last_index();// 当前的最大 index
+        if entries.is_empty() {// 待append 的日志为空，则直接返回当前的最大 index
             return Ok(prev_last_index);
         }
 
-        invoke_ctx.has_new_entries = true;
+        invoke_ctx.has_new_entries = true;// 否则待append 的日志不为空，在 invoke context 中记录存在待append 的新记录
 
-        let (last_index, last_term) = {
+        let (last_index, last_term) = {// 获得待append 的最大index 和对应term
             let e = entries.last().unwrap();
             (e.get_index(), e.get_term())
         };
@@ -1148,17 +1150,18 @@ where
         // WARNING: This code is correct based on the assumption that
         // if this function returns error, the TiKV will panic soon,
         // otherwise, the entry cache may be wrong and break correctness.
-        self.cache.append(&self.tag, &entries);
+        self.cache.append(&self.tag, &entries);// 将待append 的新日志加入 EntryCache 缓存中
 
-        ready_ctx.raft_wb_mut().append(region_id, entries)?;
+        ready_ctx.raft_wb_mut().append(region_id, entries)?;// 调用为RocksWriteBatch 实现的 RaftLogBatch 接口的 append 方法，完成待append 日志持久化到rocksdb 的操作
 
         // Delete any previously appended log entries which never committed.
         // TODO: Wrap it as an engine::Error.
+        // 删除必定无法提交的更早的日志
         ready_ctx
             .raft_wb_mut()
-            .cut_logs(region_id, last_index + 1, prev_last_index + 1);
+            .cut_logs(region_id, last_index + 1, prev_last_index + 1);// 将待append 的最大index 之后的日志删除
 
-        invoke_ctx.raft_state.set_last_index(last_index);
+        invoke_ctx.raft_state.set_last_index(last_index);// 更新 RaftLocalState 所记录的lastIndex
         invoke_ctx.last_term = last_term;
 
         Ok(last_index)
@@ -1235,6 +1238,7 @@ where
     }
 
     // Apply the peer with given snapshot.
+    // 将给定的snapshot 应用到 Raft 节点（peer）
     pub fn apply_snapshot(
         &mut self,
         ctx: &mut InvokeContext,
@@ -1495,6 +1499,8 @@ where
     }
 
     /// Save memory states to disk.
+    /// handle_raft_ready_append 中，处理完 ready.committed_entries 中待应用的日志后， ready.entries 中未持久化的日志数据还需要持久化
+    /// 并更新 peer 所记录的 last index 等信息
     ///
     /// This function only write data to `ready_ctx`'s `WriteBatch`. It's caller's duty to write
     /// it explicitly to disk. If it's flushed to disk successfully, `post_ready` should be called
@@ -1506,35 +1512,37 @@ where
         ready: &mut Ready,
         destroy_regions: Vec<metapb::Region>,
     ) -> Result<InvokeContext> {
-        let mut ctx = InvokeContext::new(self);
-        let snapshot_index = if ready.snapshot().is_empty() {
+        let mut ctx = InvokeContext::new(self);// 创建 invokecontext 保存内存状态的更新，作为 handle_raft_ready 的返回值，新创建的 invokecontext 复制了 peerStorage.raft_state 的信息
+        let snapshot_index = if ready.snapshot().is_empty() {// 若 ready 中的snapshot 为空，则将 snapshot_index 设为0
             0
-        } else {
+        } else {// 否则 ready 中snapshot 不为空，将snapshot 应用，同时更新raft_state 记录的index 等信息，并返回raft_state 的最新last index
             fail_point!("raft_before_apply_snap");
-            let (kv_wb, raft_wb) = ready_ctx.wb_mut();
-            self.apply_snapshot(&mut ctx, ready.snapshot(), kv_wb, raft_wb, &destroy_regions)?;
+            let (kv_wb, raft_wb) = ready_ctx.wb_mut();// 获取ready 对应的 raftdb writebatch 和 kvdb writebatch
+            self.apply_snapshot(&mut ctx, ready.snapshot(), kv_wb, raft_wb, &destroy_regions)?;// 若appLy_snapshot 出错则返回值为 Err
             fail_point!("raft_after_apply_snap");
 
             ctx.destroyed_regions = destroy_regions;
 
-            last_index(&ctx.raft_state)
+            last_index(&ctx.raft_state)// 返回值为 RaftLocalState 记录的 last index
         };
 
-        if !ready.entries().is_empty() {
-            self.append(&mut ctx, ready.take_entries(), ready_ctx)?;
+        if !ready.entries().is_empty() {// 判断 ready 中entries 不为空
+            self.append(&mut ctx, ready.take_entries(), ready_ctx)?;// 执行PeerStorage append 将ready 中entries 提交到 writebatch 中以便持久化，(持久化还需要调用方显示执行，这里只完成了放入write batch中)
+                                                                    // 并更新 ctx.raft_state.lastindex 和 last term；若出错则返回值为Err
+                                                                    //rocksdb 的持久化实现参见 impl RaftLogBatch for RocksWriteBatch 
         }
 
         // Last index is 0 means the peer is created from raft message
         // and has not applied snapshot yet, so skip persistent hard state.
-        if ctx.raft_state.get_last_index() > 0 {
+        if ctx.raft_state.get_last_index() > 0 {// last index 为0 表示peer 是从 raft message 创建的，没有应用snapshot，因此跳过对hard state 的持久化（因为只有snapshot 中包含hardstate？）
             if let Some(hs) = ready.hs() {
-                ctx.raft_state.set_hard_state(hs.clone());
+                ctx.raft_state.set_hard_state(hs.clone());// 更新 ctx.raft_state
             }
         }
 
         // Save raft state if it has changed or there is a snapshot.
-        if ctx.raft_state != self.raft_state || snapshot_index > 0 {
-            ctx.save_raft_state_to(ready_ctx.raft_wb_mut())?;
+        if ctx.raft_state != self.raft_state || snapshot_index > 0 {// 若ctx.raft_state 已被更新或 ready 中存在snapshot
+            ctx.save_raft_state_to(ready_ctx.raft_wb_mut())?;// 持久化最新的 ctx.raft_state，rocksdb 的持久化实现参见 impl RaftLogBatch for RocksWriteBatch 
             if snapshot_index > 0 {
                 // in case of restart happen when we just write region state to Applying,
                 // but not write raft_local_state to raft rocksdb in time.
@@ -1553,6 +1561,7 @@ where
     }
 
     /// Update the memory state after ready changes are flushed to disk successfully.
+    /// 在 ready 中的信息被成功保存到磁盘后，更新内存中记录的状态
     pub fn post_ready(&mut self, ctx: InvokeContext) -> Option<ApplySnapResult> {
         self.raft_state = ctx.raft_state;
         self.apply_state = ctx.apply_state;

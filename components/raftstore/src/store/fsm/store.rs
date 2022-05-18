@@ -693,7 +693,7 @@ impl<EK: KvEngine, ER: RaftEngine, T: Transport> RaftPoller<EK, ER, T> {
         {
             self.poll_ctx.trans.flush();
         }
-        let ready_cnt = self.poll_ctx.ready_res.len();
+        let ready_cnt = self.poll_ctx.ready_res.len();// PeerFsmDelegate::collect_ready 中将ready 压入 ctx.ready_res
         self.poll_ctx.raft_metrics.ready.has_ready_region += ready_cnt as u64;
         fail_point!("raft_before_save");
         if !self.poll_ctx.kv_wb.is_empty() {
@@ -740,7 +740,9 @@ impl<EK: KvEngine, ER: RaftEngine, T: Transport> RaftPoller<EK, ER, T> {
             let mut ready_res = mem::take(&mut self.poll_ctx.ready_res);
             for ready in ready_res.drain(..) {
                 PeerFsmDelegate::new(&mut peers[ready.batch_offset], &mut self.poll_ctx)
-                    .post_raft_ready_append(ready);
+                    .post_raft_ready_append(ready);// 针对poll_ctx。ready_res 中所收集的每个 Ready 结构体，调用 PeerFsmDelegate::post_raft_ready_append，
+                    // 此时poller 完成了 handle_normal，调用了 PollerHandler 的 end() 方法
+                    // end() 中调用 RaftPoller::handle_raft_ready
             }
         }
         let dur = self.timer.saturating_elapsed();
@@ -853,7 +855,7 @@ impl<EK: KvEngine, ER: RaftEngine, T: Transport> PollHandler<PeerFsm<EK, ER>, St
         delegate.handle_msgs(&mut self.store_msg_buf);
         expected_msg_count
     }
-
+    // 作为一个 PollHandler ，会循环执行 handle_normal，处理 normal 的 ready 结构体
     fn handle_normal(&mut self, peer: &mut PeerFsm<EK, ER>) -> Option<usize> {
         let mut expected_msg_count = None;
 
@@ -898,16 +900,16 @@ impl<EK: KvEngine, ER: RaftEngine, T: Transport> PollHandler<PeerFsm<EK, ER>, St
             }
         }
         let mut delegate = PeerFsmDelegate::new(peer, &mut self.poll_ctx);
-        delegate.handle_msgs(&mut self.peer_msg_buf);
-        delegate.collect_ready();
+        delegate.handle_msgs(&mut self.peer_msg_buf);// 处理消息
+        delegate.collect_ready();// 收集proposal 结果，持久化状态和非持久化状态的更新都被保存到 self.poll_ctx 中
         self.poll_ctx.processed_fsm_count += 1;
-        expected_msg_count
+        expected_msg_count// 等于None？
     }
 
     fn end(&mut self, peers: &mut [Box<PeerFsm<EK, ER>>]) {
         self.flush_ticks();
-        if self.poll_ctx.has_ready {
-            self.handle_raft_ready(peers);
+        if self.poll_ctx.has_ready {// 若 poll_ctx 中存在Ready 结构体，说明 handle_normal 时得到了Ready 结构体
+            self.handle_raft_ready(peers);// 调用 RaftPoller::handle_raft_ready
         }
         self.poll_ctx.current_time = None;
         self.poll_ctx
@@ -1610,6 +1612,7 @@ impl<'a, EK: KvEngine, ER: RaftEngine, T: Transport> StoreFsmDelegate<'a, EK, ER
         Ok(CheckMsgStatus::NewPeer)
     }
 
+    // 在一个 Peer 收到 Raft 消息之后，会进入这个函数中进行处理，内部调用 Raft::step 函数更新 Raft 状态机的内存状态
     fn on_raft_message(&mut self, msg: InspectedRaftMessage) -> Result<()> {
         let (heap_size, forwarded) = (msg.heap_size, Cell::new(false));
         defer!(if !forwarded.get() {

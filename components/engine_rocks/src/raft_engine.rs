@@ -101,6 +101,7 @@ impl RaftEngineReadOnly for RocksEngine {
 // FIXME: RaftEngine should probably be implemented generically
 // for all KvEngines, but is currently implemented separately for
 // every engine.
+// RocksEngine 结构体对接口 RaftEngine 的实现
 impl RaftEngine for RocksEngine {
     type LogBatch = RocksWriteBatch;
 
@@ -162,9 +163,9 @@ impl RaftEngine for RocksEngine {
     }
 
     fn append(&self, raft_group_id: u64, entries: Vec<Entry>) -> Result<usize> {
-        let mut wb = RocksWriteBatch::new(self.as_inner().clone());
+        let mut wb = RocksWriteBatch::new(self.as_inner().clone());// 创建 self.db 的副本
         let buf = Vec::with_capacity(1024);
-        wb.append_impl(raft_group_id, &entries, buf)?;
+        wb.append_impl(raft_group_id, &entries, buf)?;// 调用 RocksEngine 的 append_impl 方法
         self.consume(&mut wb, false)
     }
 
@@ -233,13 +234,14 @@ impl RaftEngine for RocksEngine {
 
 impl RaftLogBatch for RocksWriteBatch {
     fn append(&mut self, raft_group_id: u64, entries: Vec<Entry>) -> Result<()> {
-        if let Some(max_size) = entries.iter().map(|e| e.compute_size()).max() {
-            let ser_buf = Vec::with_capacity(max_size as usize);
-            return self.append_impl(raft_group_id, &entries, ser_buf);
+        if let Some(max_size) = entries.iter().map(|e| e.compute_size()).max() {// 获取 entries 中 计算compute_size()得到的最大值
+            let ser_buf = Vec::with_capacity(max_size as usize);// 创建一个大小为最大值的 Vector，作为buffer
+            return self.append_impl(raft_group_id, &entries, ser_buf);// 创建key，将entries 作为value，调用rocksdb 的put 方法将key:value 写入rocksdb 完成持久化
         }
         Ok(())
     }
 
+    // 将从 from ~ to 的日志对应的key/value 从 rocks 中删除
     fn cut_logs(&mut self, raft_group_id: u64, from: u64, to: u64) {
         for index in from..to {
             let key = keys::raft_log_key(raft_group_id, index);
@@ -271,11 +273,11 @@ impl RocksWriteBatch {
         entries: &[Entry],
         mut ser_buf: Vec<u8>,
     ) -> Result<()> {
-        for entry in entries {
-            let key = keys::raft_log_key(raft_group_id, entry.get_index());
-            ser_buf.clear();
-            entry.write_to_vec(&mut ser_buf).unwrap();
-            self.put(&key, &ser_buf)?;
+        for entry in entries {// 针对 entries 中每个 entry
+            let key = keys::raft_log_key(raft_group_id, entry.get_index());// 为每条待处理的日志生成 key，格式为 raft_log_key 格式：0x01 0x02 region_id 0x01 log_idx
+            ser_buf.clear();// 清空buffer
+            entry.write_to_vec(&mut ser_buf).unwrap();// 将entries 写入 buffer
+            self.put(&key, &ser_buf)?;// 调用 rocksdb 的put 操作，将 key:value 写入 RocksDB
         }
         Ok(())
     }

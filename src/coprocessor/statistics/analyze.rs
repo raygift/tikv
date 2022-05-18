@@ -517,10 +517,22 @@ impl RowSampleCollector {
         let cur_rng = self.rng.gen_range(0, i64::MAX);
         if self.samples.len() < self.max_sample_size {
             need_push = true;
-        } else if self.samples.peek().unwrap().0.0 < cur_rng {
-            need_push = true;
-            let (_, evicted) = self.samples.pop().unwrap().0;
-            self.memory_usage -= evicted.iter().map(|x| x.capacity()).sum::<usize>();
+        // } else if self.samples.peek().unwrap().0.0 < cur_rng {// unwrap() 做的事就是有值返回值，如果值是 None 则直接 panic!，程序就挂了
+        //     need_push = true;
+        //     let (_, evicted) = self.samples.pop().unwrap().0;
+        //     self.memory_usage -= evicted.iter().map(|x| x.capacity()).sum::<usize>();
+        // }
+        }else{
+            match self.samples.peek(){
+                Some(data)=>{
+                    if data.0.0<cur_rng{
+                        need_push=true;
+                        let (_,evicted)=self.samples.pop().unwrap().0;
+                        self.memory_usage -= evicted.iter().map(|x|x.capacity()).sum::<usize>();
+                    }
+                },
+                None=>return,
+            }
         }
 
         if need_push {
