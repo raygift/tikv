@@ -855,7 +855,8 @@ impl<EK: KvEngine, ER: RaftEngine, T: Transport> PollHandler<PeerFsm<EK, ER>, St
         delegate.handle_msgs(&mut self.store_msg_buf);
         expected_msg_count
     }
-    // 作为一个 PollHandler ，会循环执行 handle_normal，处理 normal 的 ready 结构体
+    // PollHandler 会创建线程并调用poll，poll循环执行 handle_normal，参考 compontents/batch-system/src/batch.rs:poll()
+    // 处理 normal 的 ready 结构体
     fn handle_normal(&mut self, peer: &mut PeerFsm<EK, ER>) -> Option<usize> {
         let mut expected_msg_count = None;
 
@@ -886,7 +887,7 @@ impl<EK: KvEngine, ER: RaftEngine, T: Transport> PollHandler<PeerFsm<EK, ER>, St
                             ),
                         |_| unreachable!()
                     );
-                    self.peer_msg_buf.push(msg);
+                    self.peer_msg_buf.push(msg);// 接受消息并暂存到 peer_msg_buf 中
                 }
                 Err(TryRecvError::Empty) => {
                     expected_msg_count = Some(0);
@@ -899,9 +900,9 @@ impl<EK: KvEngine, ER: RaftEngine, T: Transport> PollHandler<PeerFsm<EK, ER>, St
                 }
             }
         }
-        let mut delegate = PeerFsmDelegate::new(peer, &mut self.poll_ctx);
-        delegate.handle_msgs(&mut self.peer_msg_buf);// 处理消息
-        delegate.collect_ready();// 收集proposal 结果，持久化状态和非持久化状态的更新都被保存到 self.poll_ctx 中
+        let mut delegate = PeerFsmDelegate::new(peer, &mut self.poll_ctx);// 创建 PeerFsm 实例
+        delegate.handle_msgs(&mut self.peer_msg_buf);// 调用PeerFsm 的 handle_msgs处理接收到的消息
+        delegate.collect_ready();// 调用 PeerFsm 的 collect_ready 方法，收集proposal 结果，持久化状态和非持久化状态的更新都被保存到 self.poll_ctx 中
         self.poll_ctx.processed_fsm_count += 1;
         expected_msg_count// 等于None？
     }
